@@ -139,6 +139,8 @@ class VP {
             return;
         }
 
+        self.href = window.location.href;
+
         self.$items_wrap = $item.find( '.vp-portfolio__items' );
         self.$slider_thumbnails_wrap = $item.find( '.vp-portfolio__thumbnails' );
         self.$pagination = $item.find( '.vp-portfolio__pagination-wrap' );
@@ -741,13 +743,17 @@ class VP {
     loadNewItems( url, removeExisting, cb ) {
         const self = this;
 
-        if ( self.loading || ! url ) {
+        if ( self.loading || ! url || self.href === url ) {
             return;
         }
 
         const ajaxData = {
             method: 'POST',
             url,
+            complete( { responseText } ) {
+                self.href = url;
+                self.replaceItems( responseText, removeExisting, cb );
+            },
         };
 
         self.loading = true;
@@ -756,80 +762,90 @@ class VP {
 
         self.emitEvent( 'startLoadingNewItems', [ url, ajaxData ] );
 
+        $.ajax( ajaxData );
+    }
+
+    /**
+     * Replace items to the new loaded using AJAX
+     *
+     * @param {string} content - new page content.
+     * @param {bool} removeExisting - remove existing elements.
+     */
+    replaceItems( content, removeExisting ) {
+        const self = this;
+
+        if ( ! content ) {
+            return;
+        }
+
         // load to invisible container, then append to posts container
-        $.ajax( ajaxData ).done( ( data ) => {
-            data = data.replace( '<body', '<body><div id="vp-infinite-load-body"' ).replace( '</body>', '</div></body>' );
-            const $body = $( data ).filter( '#vp-infinite-load-body' );
+        content = content.replace( '<body', '<body><div id="vp-infinite-load-body"' ).replace( '</body>', '</div></body>' );
+        const $body = $( content ).filter( '#vp-infinite-load-body' );
 
-            // find current block on new page
-            const $newVP = $body.find( `.vp-portfolio.vp-uid-${ self.uid }` );
+        // find current block on new page
+        const $newVP = $body.find( `.vp-portfolio.vp-uid-${ self.uid }` );
 
-            // insert new items
-            if ( $newVP.length ) {
-                const newItems = $newVP.find( '.vp-portfolio__items' ).html();
+        // insert new items
+        if ( $newVP.length ) {
+            const newItems = $newVP.find( '.vp-portfolio__items' ).html();
 
-                // update filter
-                if ( self.$filter.length ) {
-                    self.$filter.each( function() {
-                        const $filter = $( this );
-                        let newFilterContent = '';
+            // update filter
+            if ( self.$filter.length ) {
+                self.$filter.each( function() {
+                    const $filter = $( this );
+                    let newFilterContent = '';
 
-                        if ( $filter.parent().hasClass( 'vp-single-filter' ) ) {
-                            newFilterContent = $body.find( `[class="${ $filter.parent().attr( 'class' ).replace( ' vp-single-filter__ready', '' ) }"] .vp-portfolio__filter-wrap` ).html();
-                        } else {
-                            newFilterContent = $newVP.find( '.vp-portfolio__filter-wrap' ).html();
-                        }
+                    if ( $filter.parent().hasClass( 'vp-single-filter' ) ) {
+                        newFilterContent = $body.find( `[class="${ $filter.parent().attr( 'class' ).replace( ' vp-single-filter__ready', '' ) }"] .vp-portfolio__filter-wrap` ).html();
+                    } else {
+                        newFilterContent = $newVP.find( '.vp-portfolio__filter-wrap' ).html();
+                    }
 
-                        $filter.html( newFilterContent );
-                    } );
-                }
-
-                // update sort
-                if ( self.$sort.length ) {
-                    self.$sort.each( function() {
-                        const $sort = $( this );
-                        let newFilterContent = '';
-
-                        if ( $sort.parent().hasClass( 'vp-single-sort' ) ) {
-                            newFilterContent = $body.find( `[class="${ $sort.parent().attr( 'class' ).replace( ' vp-single-sort__ready', '' ) }"] .vp-portfolio__sort-wrap` ).html();
-                        } else {
-                            newFilterContent = $newVP.find( '.vp-portfolio__sort-wrap' ).html();
-                        }
-
-                        $sort.html( newFilterContent );
-                    } );
-                }
-
-                // update pagination
-                if ( self.$pagination.length ) {
-                    self.$pagination.html( $newVP.find( '.vp-portfolio__pagination-wrap' ).html() );
-                }
-
-                self.addItems( $( newItems ), removeExisting, $newVP );
-
-                self.emitEvent( 'loadedNewItems', [ $newVP, $newVP, data ] );
+                    $filter.html( newFilterContent );
+                } );
             }
 
-            // update next page data
-            const nextPageUrl = $newVP.attr( 'data-vp-next-page-url' );
-            self.options.nextPageUrl = nextPageUrl;
-            self.$item.attr( 'data-vp-next-page-url', nextPageUrl );
+            // update sort
+            if ( self.$sort.length ) {
+                self.$sort.each( function() {
+                    const $sort = $( this );
+                    let newFilterContent = '';
 
-            self.$item.removeClass( 'vp-portfolio__loading' );
+                    if ( $sort.parent().hasClass( 'vp-single-sort' ) ) {
+                        newFilterContent = $body.find( `[class="${ $sort.parent().attr( 'class' ).replace( ' vp-single-sort__ready', '' ) }"] .vp-portfolio__sort-wrap` ).html();
+                    } else {
+                        newFilterContent = $newVP.find( '.vp-portfolio__sort-wrap' ).html();
+                    }
 
-            self.loading = false;
-
-            self.emitEvent( 'endLoadingNewItems' );
-
-            self.prepareLazyLoad();
-
-            // init custom colors
-            self.initCustomColors();
-
-            if ( cb ) {
-                cb();
+                    $sort.html( newFilterContent );
+                } );
             }
-        } );
+
+            // update pagination
+            if ( self.$pagination.length ) {
+                self.$pagination.html( $newVP.find( '.vp-portfolio__pagination-wrap' ).html() );
+            }
+
+            self.addItems( $( newItems ), removeExisting, $newVP );
+
+            self.emitEvent( 'loadedNewItems', [ $newVP, $newVP, content ] );
+        }
+
+        // update next page data
+        const nextPageUrl = $newVP.attr( 'data-vp-next-page-url' );
+        self.options.nextPageUrl = nextPageUrl;
+        self.$item.attr( 'data-vp-next-page-url', nextPageUrl );
+
+        self.$item.removeClass( 'vp-portfolio__loading' );
+
+        self.loading = false;
+
+        self.emitEvent( 'endLoadingNewItems' );
+
+        self.prepareLazyLoad();
+
+        // init custom colors
+        self.initCustomColors();
     }
 }
 
